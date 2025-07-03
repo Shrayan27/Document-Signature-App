@@ -118,7 +118,7 @@ router.post("/finalize", authenticate, async (req, res) => {
     page.drawText(signatureText, {
       x,
       y: page.getHeight() - y - fontSize, // Adjust for font height
-      size: 24,
+      size: fontSize,
       font,
       color: rgb(0, 0, 0),
     });
@@ -127,22 +127,27 @@ router.post("/finalize", authenticate, async (req, res) => {
     const signedPath = filePath.replace(/\.pdf$/, "_signed.pdf");
     fs.writeFileSync(signedPath, outBytes);
 
+    doc.signedPath = signedPath;
+    await doc.save();
+
     // Update database record
-    sig.x = x;
-    sig.y = y;
-    sig.pages.push({
-      page: pageNum,
-      x,
-      y,
-      signatureText,
-      fontSize,
-    });
+   const pageEntryIndex = sig.pages.findIndex(p => p.page === pageNum);
+    if (pageEntryIndex > -1) {
+        sig.pages[pageEntryIndex].x = x;
+        sig.pages[pageEntryIndex].y = y;
+        sig.pages[pageEntryIndex].signatureText = signatureText;
+        sig.pages[pageEntryIndex].fontSize = fontSize;
+    } else {
+        
+        sig.pages.push({ page: pageNum, x, y, signatureText, fontSize });
+    }
     sig.status = "signed";
+    sig.signedBy = req.user ? req.user.email : sig.signerEmail; 
     await sig.save();
 
-    sig.signatureText = signatureText;
-    sig.status = "signed";
-    await sig.save();
+    // sig.signatureText = signatureText;
+    // sig.status = "signed";
+    // await sig.save();
 
     res.json({ success: true, signedPath });
   } catch (err) {
@@ -163,7 +168,9 @@ router.get("/public/:token", async (req, res) => {
     if (!sig || !sig.documentId)
       return res.status(404).send("Invalid link or signature not found.");
 
-    res.sendFile(sig.documentId.path, { root: "." });
+    const pathToServe = sig.documentId.signedPath || sig.documentId.path;
+
+    res.sendFile(pathToServe);
   } catch (err) {
     console.error("Public link error:", err);
     res.status(500).send("Server error");

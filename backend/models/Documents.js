@@ -18,6 +18,10 @@ const DocumentSchema = new mongoose.Schema({
     type: String,
     required: true,
   },
+   signedPath: { 
+    type: String,
+    required: false, 
+   },
   uploadedAt: {
     type: Date,
     default: Date.now,
