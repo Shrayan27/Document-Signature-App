@@ -30,7 +30,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(
   cors({
-    origin: "http://localhost:5173",
+    origin: "https://document-signature-app-frontend-grgd-dkamojgqa.vercel.app",
     credentials: true,
   })
 );

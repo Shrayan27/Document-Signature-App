@@ -24,7 +24,7 @@ console.log("HERE ", process.env.SMTP_HOST);
 const transporter = nodemailer.createTransport({
   host: "smtp.ethereal.email",
   port: 465,
-  secure: true, // Proper boolean check
+  secure: true,
   auth: {
     user: "lyda.emard52@ethereal.email",
     pass: "3aufD1TUC3ehhMV5ah",
@@ -58,7 +58,7 @@ router.post("/", authenticate, async (req, res) => {
       status: "pending",
     });
 
-    const frontendBaseUrl = "http://localhost:5173";
+    const frontendBaseUrl = "https://document-signature-app-frontend-grgd-dkamojgqa.vercel.app";
     const link = `${frontendBaseUrl}/sign/${sig.token}`;
 
     await transporter.sendMail({
