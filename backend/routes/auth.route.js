@@ -8,11 +8,11 @@ router.post('/register', Register)
 router.post('/login', Login)
 
 router.post('/logout', (req, res) => {
-    res.clearCookie('token', {
-        httpOnly: true, // Should match how it was set
-        secure: process.env.NODE_ENV === 'production', // Use true in production for HTTPS
-        sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax', // Adjust based on your cookie settings
-    });
+  res.clearCookie('access_token', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
+  });
         // Send a success response
     res.status(200).json({ status: true, message: 'Logged out successfully' });
 });

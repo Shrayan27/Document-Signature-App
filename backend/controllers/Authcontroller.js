@@ -40,7 +40,7 @@ export const Register = async (req, res) => {
 export const Login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    // check if user not registered
+
     const user = await User.findOne({ email }).lean().exec();
     if (!user) {
       return res.status(403).json({
@@ -49,7 +49,6 @@ export const Login = async (req, res) => {
       });
     }
 
-    // check password
     const isVerifyPassword = await bcryptjs.compare(password, user.password);
     if (!isVerifyPassword) {
       return res.status(403).json({
@@ -57,13 +56,18 @@ export const Login = async (req, res) => {
         message: "Invalid login credentials.",
       });
     }
+
     delete user.password;
 
     const token = jwt.sign(user, process.env.JWT_SECRET);
 
     res.cookie("access_token", token, {
       httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: process.env.NODE_ENV === 'production' ? 'None' : 'Lax',
+      maxAge: 24 * 60 * 60 * 1000,
     });
+
     res.status(200).json({
       status: true,
       message: "Login Success.",
