@@ -7,10 +7,22 @@ import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import fs from "fs";
 import path from "path";
 import nodemailer from "nodemailer";
+import fontkit from "@pdf-lib/fontkit";
 
 const router = express.Router();
-console.log("HERE ", process.env.SMTP_HOST);
-// --- NODEMAILER TRANSPORTER SETUP ---
+// ✔️ Finalize Signature and Embed into PDF
+// Map readable font names to local font paths
+const fontPathMap = {
+  Arial: path.resolve("fonts/Arial.ttf"),
+  "Times New Roman": path.resolve("fonts/TimesNewRoman.ttf"),
+  "Courier New": path.resolve("fonts/CourierNew.ttf"),
+  Georgia: path.resolve("fonts/Georgia.ttf"),
+  Verdana: path.resolve("fonts/Verdana.ttf"),
+  "Dancing Script": path.resolve("fonts/DancingScript-Regular.ttf"),
+  Pacifico: path.resolve("fonts/Pacifico-Regular.ttf"),
+  "Great Vibes": path.resolve("fonts/GreatVibes-Regular.ttf"),
+};
+
 // const transporter = nodemailer.createTransport({
 //   host: process.env.SMTP_HOST,
 //   port: parseInt(process.env.SMTP_PORT),
@@ -20,6 +32,18 @@ console.log("HERE ", process.env.SMTP_HOST);
 //     pass: process.env.SMTP_PASS,
 //   },
 // });
+
+// Utility to convert HEX to rgb
+const hexToRgb = (hex) => {
+  const match = hex.match(/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i);
+  return match
+    ? {
+        r: parseInt(match[1], 16) / 255,
+        g: parseInt(match[2], 16) / 255,
+        b: parseInt(match[3], 16) / 255,
+      }
+    : { r: 0, g: 0, b: 0 };
+};
 
 const transporter = nodemailer.createTransport({
   host: "smtp.ethereal.email",
@@ -78,7 +102,7 @@ router.post("/", authenticate, async (req, res) => {
   }
 });
 
-// ✔️ Finalize Signature and Embed into PDF
+// Finalize the signature and embed it into PDF
 router.post("/finalize", authenticate, async (req, res) => {
   try {
     const {
@@ -88,13 +112,15 @@ router.post("/finalize", authenticate, async (req, res) => {
       y,
       page: pageNum,
       fontSize = 24,
+      fontFamily = "Helvetica",
+      color = "#000000",
+      isBold = false,
+      isUnderline = false,
     } = req.body;
 
     if (!signatureText || !signatureId || x == null || y == null || !pageNum) {
       return res.status(400).json({ error: "Missing required signature data" });
     }
-
-    console.log("📥 Received signatureText:", signatureText);
 
     const sig = await Signature.findById(signatureId);
     if (!sig) return res.status(404).json({ error: "Signature not found" });
@@ -105,6 +131,7 @@ router.post("/finalize", authenticate, async (req, res) => {
     const filePath = path.resolve(doc.path);
     const pdfBytes = fs.readFileSync(filePath);
     const pdfDoc = await PDFDocument.load(pdfBytes);
+    pdfDoc.registerFontkit(fontkit);
 
     const pages = pdfDoc.getPages();
     if (pageNum < 1 || pageNum > pages.length) {
@@ -112,16 +139,46 @@ router.post("/finalize", authenticate, async (req, res) => {
     }
 
     const page = pages[pageNum - 1];
-    const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
 
-    // PDF origin is bottom-left; adjust Y accordingly
-    page.drawText(signatureText, {
-      x,
-      y: page.getHeight() - y - fontSize, // Adjust for font height
-      size: fontSize,
-      font,
-      color: rgb(0, 0, 0),
-    });
+    // Embed font
+    let embeddedFont;
+    if (fontPathMap[fontFamily]) {
+      const fontPath = fontPathMap[fontFamily];
+      const fontBytes = fs.readFileSync(fontPath);
+      if (!fontBytes || fontBytes.length < 1000) {
+        throw new Error(`Invalid font file: ${fontPath}`);
+      }
+      embeddedFont = await pdfDoc.embedFont(fontBytes);
+    } else {
+      embeddedFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+    }
+
+    const { r, g, b } = hexToRgb(color);
+    const adjustedY = page.getHeight() - y - fontSize;
+
+    const drawText = (offsetX = 0, offsetY = 0) => {
+      page.drawText(signatureText, {
+        x: x + offsetX,
+        y: adjustedY + offsetY,
+        size: fontSize,
+        font: embeddedFont,
+        color: rgb(r, g, b),
+      });
+    };
+
+    drawText();
+    if (isBold) drawText(0.3, 0);
+
+    if (isUnderline) {
+      const textWidth = embeddedFont.widthOfTextAtSize(signatureText, fontSize);
+      const underlineY = adjustedY - 2;
+      page.drawLine({
+        start: { x, y: underlineY },
+        end: { x: x + textWidth, y: underlineY },
+        thickness: 1,
+        color: rgb(r, g, b),
+      });
+    }
 
     const outBytes = await pdfDoc.save();
     const signedPath = filePath.replace(/\.pdf$/, "_signed.pdf");
@@ -130,32 +187,33 @@ router.post("/finalize", authenticate, async (req, res) => {
     doc.signedPath = signedPath;
     await doc.save();
 
-    // Update database record
-   const pageEntryIndex = sig.pages.findIndex(p => p.page === pageNum);
-    if (pageEntryIndex > -1) {
-        sig.pages[pageEntryIndex].x = x;
-        sig.pages[pageEntryIndex].y = y;
-        sig.pages[pageEntryIndex].signatureText = signatureText;
-        sig.pages[pageEntryIndex].fontSize = fontSize;
-    } else {
-        
-        sig.pages.push({ page: pageNum, x, y, signatureText, fontSize });
-    }
-    sig.status = "signed";
-    sig.signedBy = req.user ? req.user.email : sig.signerEmail; 
-    await sig.save();
+    const pageEntryIndex = sig.pages.findIndex((p) => p.page === pageNum);
+    const newPageData = {
+      page: pageNum,
+      x,
+      y,
+      signatureText,
+      fontSize,
+      fontFamily,
+      color,
+      isBold,
+      isUnderline,
+    };
 
-    // sig.signatureText = signatureText;
-    // sig.status = "signed";
-    // await sig.save();
+    if (pageEntryIndex > -1) {
+      sig.pages[pageEntryIndex] = newPageData;
+    } else {
+      sig.pages.push(newPageData);
+    }
+
+    sig.status = "signed";
+    sig.signedBy = req.user?.email || sig.signerEmail;
+    await sig.save();
 
     res.json({ success: true, signedPath });
   } catch (err) {
     console.error("❌ Finalize error:", err);
-    res.status(500).json({
-      error: "Finalize failed",
-      details: err.message || "Unexpected server error",
-    });
+    res.status(500).json({ error: "Finalize failed", details: err.message });
   }
 });
 
