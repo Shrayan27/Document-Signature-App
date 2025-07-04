@@ -58,7 +58,7 @@ router.post("/", authenticate, async (req, res) => {
       status: "pending",
     });
 
-    const frontendBaseUrl = "https://document-signature-app-frontend-grgd-ozbv5e9bd.vercel.app";
+    const frontendBaseUrl = "https://document-signature-app-frontend-grgd-mkptfsf41.vercel.app";
     const link = `${frontendBaseUrl}/sign/${sig.token}`;
 
     await transporter.sendMail({
