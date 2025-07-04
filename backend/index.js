@@ -30,7 +30,7 @@ app.use(express.json());
 app.use(cookieParser());
 app.use(
   cors({
-    origin: "https://document-signature-app-frontend-grgd-75ieu4ek1.vercel.app",
+    origin: "https://document-signature-app-frontend-grgd-ohkqcshmm.vercel.app",
     credentials: true,
   })
 );
